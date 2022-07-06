@@ -5,30 +5,66 @@ import { Headers } from 'headers-polyfill'
 import { createMockedRequest } from '../../../test/support/utils'
 import { parseGraphQLRequest } from './parseGraphQLRequest'
 
-test('returns true given a GraphQL-compatible request', () => {
-  const getRequest = createMockedRequest({
+test('returns parsed request given a valid GraphQL request', () => {
+  // parses GET requests with named mutation
+  const getNamedMutationRequest = createMockedRequest({
     method: 'GET',
     url: new URL(
-      'http://localhost:8080/graphql?query=mutation Login { user { id } }',
+      'http://localhost:8080/graphql?operationName=Login&query=mutation Login { user { id } }',
     ),
     headers: new Headers({ 'Content-Type': 'application/json' }),
   })
-  expect(parseGraphQLRequest(getRequest)).toEqual({
+  expect(parseGraphQLRequest(getNamedMutationRequest)).toEqual({
     operationType: 'mutation',
     operationName: 'Login',
+    variables: undefined,
   })
 
-  const postRequest = createMockedRequest({
+  // parses POST requests with named query
+  const postNamedQueryRequest = createMockedRequest({
     method: 'POST',
     url: new URL('http://localhost:8080/graphql'),
     headers: new Headers({ 'Content-Type': 'application/json' }),
     body: {
       query: `query GetUser { user { firstName } }`,
+      operationName: 'GetUser',
     },
   })
-  expect(parseGraphQLRequest(postRequest)).toEqual({
+  expect(parseGraphQLRequest(postNamedQueryRequest)).toEqual({
     operationType: 'query',
     operationName: 'GetUser',
+    variables: undefined,
+  })
+
+  // parses GET requests with shorthand queries
+  const getShorthandQueryRequest = createMockedRequest({
+    method: 'GET',
+    url: new URL('http://localhost:8080/graphql?query={ user { id } }'),
+    headers: new Headers({ 'Content-Type': 'application/json' }),
+  })
+  expect(parseGraphQLRequest(getShorthandQueryRequest)).toEqual({
+    operationType: 'query',
+    operationName: undefined,
+    variables: undefined,
+  })
+
+  // parses POST requests with multiple operations given a name
+  const postMultipleOperationsRequest = createMockedRequest({
+    method: 'POST',
+    url: new URL('http://localhost:8080/graphql'),
+    headers: new Headers({ 'Content-Type': 'application/json' }),
+    body: {
+      operationName: 'Login',
+      query: `
+        query GetUser { user { firstName } }
+        mutation Login { user { id } }
+      `,
+    },
+  })
+  expect(parseGraphQLRequest(postMultipleOperationsRequest)).toEqual({
+    operationType: 'mutation',
+    operationName: 'Login',
+    variables: undefined,
   })
 })
 
@@ -58,6 +94,25 @@ test('throws an exception given an invalid GraphQL request', () => {
   })
   expect(() => parseGraphQLRequest(postRequest)).toThrowError(
     '[MSW] Failed to intercept a GraphQL request to "POST http://localhost:8080/graphql": cannot parse query. See the error message from the parser below.\n\nSyntax Error: Expected "$", found ")".',
+  )
+
+  const postRequestWithMultipleAnonymous = createMockedRequest({
+    method: 'POST',
+    url: new URL('http://localhost:8080/graphql'),
+    headers: new Headers({
+      'Content-Type': 'application/json',
+    }),
+    body: {
+      query: `
+        query { user { id } }
+        query { otherUser { id } }
+      `,
+    },
+  })
+  expect(() =>
+    parseGraphQLRequest(postRequestWithMultipleAnonymous),
+  ).toThrowError(
+    '[MSW] Failed to intercept a GraphQL request to "POST http://localhost:8080/graphql": cannot parse query. See the error message from the parser below.\n\nAnonymous operations must be the only defined operation.',
   )
 })
 

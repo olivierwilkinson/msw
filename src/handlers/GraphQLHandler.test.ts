@@ -79,7 +79,7 @@ describe('info', () => {
 
     expect(handler.info.header).toEqual('query GetUser (origin: *)')
     expect(handler.info.operationType).toEqual('query')
-    expect(handler.info.operationName).toEqual('GetUser')
+    expect(handler.info.operationSelector).toEqual('GetUser')
   })
 
   test('exposes request handler information for mutation', () => {
@@ -92,7 +92,7 @@ describe('info', () => {
 
     expect(handler.info.header).toEqual('mutation Login (origin: *)')
     expect(handler.info.operationType).toEqual('mutation')
-    expect(handler.info.operationName).toEqual('Login')
+    expect(handler.info.operationSelector).toEqual('Login')
   })
 
   test('parses a query operation name from a given DocumentNode', () => {
@@ -113,7 +113,7 @@ describe('info', () => {
 
     expect(handler.info).toHaveProperty('header', 'query GetUser (origin: *)')
     expect(handler.info).toHaveProperty('operationType', 'query')
-    expect(handler.info).toHaveProperty('operationName', 'GetUser')
+    expect(handler.info).toHaveProperty('operationSelector', 'GetUser')
   })
 
   test('parses a mutation operation name from a given DocumentNode', () => {
@@ -133,7 +133,7 @@ describe('info', () => {
 
     expect(handler.info).toHaveProperty('header', 'mutation Login (origin: *)')
     expect(handler.info).toHaveProperty('operationType', 'mutation')
-    expect(handler.info).toHaveProperty('operationName', 'Login')
+    expect(handler.info).toHaveProperty('operationSelector', 'Login')
   })
 
   test('throws an exception given a DocumentNode with a mismatched operation type', () => {
@@ -154,6 +154,17 @@ describe('info', () => {
 })
 
 describe('parse', () => {
+  // silence error logs from parse failures
+  let consoleErrorSpy: jest.SpyInstance
+  beforeAll(() => {
+    consoleErrorSpy = jest
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined)
+  })
+  afterAll(() => {
+    consoleErrorSpy.mockRestore()
+  })
+
   describe('query', () => {
     test('parses a query without variables (GET)', () => {
       const handler = new GraphQLHandler(
@@ -235,6 +246,30 @@ describe('parse', () => {
           userId: 'abc-123',
         },
       })
+    })
+
+    test('parses a query with multiple operations when operation name passed', () => {
+      const handler = new GraphQLHandler(
+        OperationTypeNode.QUERY,
+        'GetUser',
+        '*',
+        resolver,
+      )
+
+      const query = `${LOGIN} mutation OtherQuery { id }`
+      const request = createPostGraphQLRequest({
+        query,
+        operationName: 'OtherQuery',
+      })
+      const alienRequest = createPostGraphQLRequest({
+        query,
+      })
+
+      expect(handler.parse(request)).toEqual({
+        operationType: 'mutation',
+        operationName: 'OtherQuery',
+      })
+      expect(handler.parse(alienRequest)).toBe(undefined)
     })
   })
 
@@ -319,6 +354,30 @@ describe('parse', () => {
           userId: 'abc-123',
         },
       })
+    })
+
+    test('parses a mutation with multiple operations when operation name passed', () => {
+      const handler = new GraphQLHandler(
+        OperationTypeNode.MUTATION,
+        'Login',
+        '*',
+        resolver,
+      )
+
+      const query = `${LOGIN} mutation OtherMutation { id }`
+      const request = createPostGraphQLRequest({
+        query,
+        operationName: 'OtherMutation',
+      })
+      const alienRequest = createPostGraphQLRequest({
+        query,
+      })
+
+      expect(handler.parse(request)).toEqual({
+        operationType: 'mutation',
+        operationName: 'OtherMutation',
+      })
+      expect(handler.parse(alienRequest)).toBe(undefined)
     })
   })
 })
@@ -408,9 +467,30 @@ describe('predicate', () => {
       false,
     )
   })
+
+  test('returns false when parsedResult is undefined', () => {
+    const handler = new GraphQLHandler('all', 'GetUser', '*', resolver)
+
+    const request = createPostGraphQLRequest({
+      query: GET_USER,
+    })
+
+    expect(handler.predicate(request, undefined))
+  })
 })
 
 describe('test', () => {
+  // silence error logs from parse failures
+  let consoleErrorSpy: jest.SpyInstance
+  beforeAll(() => {
+    consoleErrorSpy = jest
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined)
+  })
+  afterAll(() => {
+    consoleErrorSpy.mockRestore()
+  })
+
   test('respects operation type', () => {
     const handler = new GraphQLHandler(
       OperationTypeNode.QUERY,
@@ -468,6 +548,48 @@ describe('test', () => {
     )
     const alienRequest = createPostGraphQLRequest({
       query: GET_USER,
+    })
+
+    expect(handler.test(request)).toBe(true)
+    expect(handler.test(alienRequest)).toBe(false)
+  })
+
+  test('respects queries with multiple operations when also provided a operation name', () => {
+    const handler = new GraphQLHandler(
+      OperationTypeNode.QUERY,
+      new RegExp('.*'),
+      '*',
+      resolver,
+    )
+
+    const query = `${GET_USER} query OtherQuery { id }`
+    const request = createPostGraphQLRequest({
+      query,
+      operationName: 'GetUser',
+    })
+    const alienRequest = createPostGraphQLRequest({
+      query,
+    })
+
+    expect(handler.test(request)).toBe(true)
+    expect(handler.test(alienRequest)).toBe(false)
+  })
+
+  test('respects mutations with multiple operations when also provided a operation name', () => {
+    const handler = new GraphQLHandler(
+      OperationTypeNode.MUTATION,
+      new RegExp('.*'),
+      '*',
+      resolver,
+    )
+
+    const query = `${LOGIN} mutation OtherMutation { id }`
+    const request = createPostGraphQLRequest({
+      query,
+      operationName: 'Login',
+    })
+    const alienRequest = createPostGraphQLRequest({
+      query,
     })
 
     expect(handler.test(request)).toBe(true)

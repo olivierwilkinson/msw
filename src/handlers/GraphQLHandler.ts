@@ -57,7 +57,7 @@ export type GraphQLVariables = Record<string, any>
 
 export interface GraphQLHandlerInfo extends RequestHandlerDefaultInfo {
   operationType: ExpectedOperationTypeNode
-  operationName: GraphQLHandlerNameSelector
+  operationSelector: GraphQLHandlerNameSelector
 }
 
 export type GraphQLRequestBody<VariablesType extends GraphQLVariables> =
@@ -68,6 +68,7 @@ export type GraphQLRequestBody<VariablesType extends GraphQLVariables> =
 
 export interface GraphQLJsonRequestBody<Variables extends GraphQLVariables> {
   query: string
+  operationName: string | undefined
   variables?: Variables
 }
 
@@ -98,14 +99,16 @@ export class GraphQLHandler<
 
   constructor(
     operationType: ExpectedOperationTypeNode,
-    operationName: GraphQLHandlerNameSelector,
+    operationSelector: GraphQLHandlerNameSelector,
     endpoint: Path,
     resolver: ResponseResolver<any, any>,
   ) {
-    let resolvedOperationName = operationName
+    let resolvedOperationSelector = operationSelector
 
-    if (isDocumentNode(operationName)) {
-      const parsedNode = parseDocumentNode(operationName)
+    if (isDocumentNode(operationSelector)) {
+      // pass null for operationName as using a document node with
+      // multiple operation definitions as a selector is not supported
+      const parsedNode = parseDocumentNode(operationSelector, null)
 
       if (parsedNode.operationType !== operationType) {
         throw new Error(
@@ -119,19 +122,19 @@ export class GraphQLHandler<
         )
       }
 
-      resolvedOperationName = parsedNode.operationName
+      resolvedOperationSelector = parsedNode.operationName
     }
 
     const header =
       operationType === 'all'
         ? `${operationType} (origin: ${endpoint.toString()})`
-        : `${operationType} ${resolvedOperationName} (origin: ${endpoint.toString()})`
+        : `${operationType} ${resolvedOperationSelector} (origin: ${endpoint.toString()})`
 
     super({
       info: {
         header,
         operationType,
-        operationName: resolvedOperationName,
+        operationSelector: resolvedOperationSelector,
       },
       ctx: graphqlContext,
       resolver,
@@ -178,9 +181,9 @@ Consider naming this operation or using "graphql.operation" request handler to i
       parsedResult.operationType === this.info.operationType
 
     const hasMatchingOperationName =
-      this.info.operationName instanceof RegExp
-        ? this.info.operationName.test(parsedResult.operationName || '')
-        : parsedResult.operationName === this.info.operationName
+      this.info.operationSelector instanceof RegExp
+        ? this.info.operationSelector.test(parsedResult.operationName || '')
+        : parsedResult.operationName === this.info.operationSelector
 
     return (
       hasMatchingUrl.matches &&

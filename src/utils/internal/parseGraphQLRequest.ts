@@ -12,6 +12,7 @@ import { jsonParse } from './jsonParse'
 
 interface GraphQLInput {
   query: string | null
+  operationName: string | null
   variables?: GraphQLVariables
 }
 
@@ -28,10 +29,50 @@ export type ParsedGraphQLRequest<
     })
   | undefined
 
-export function parseDocumentNode(node: DocumentNode): ParsedGraphQLQuery {
-  const operationDef = node.definitions.find((def) => {
-    return def.kind === 'OperationDefinition'
-  }) as OperationDefinitionNode
+export function parseDocumentNode(
+  ast: DocumentNode,
+  operationName: string | null,
+): ParsedGraphQLQuery {
+  const operationDefs = ast.definitions.filter(
+    (def) => def.kind === 'OperationDefinition',
+  ) as OperationDefinitionNode[]
+
+  if (operationDefs.length === 1) {
+    const [operationDef] = operationDefs
+    const defOperationName = operationDef.name?.value
+
+    if (defOperationName && operationName !== defOperationName) {
+      throw new Error(
+        `Operation definition "${defOperationName}" does not match passed operation name "${operationName}"`,
+      )
+    }
+
+    if (!defOperationName && operationName !== null) {
+      throw new Error(
+        `Anonymous operation definition does not match passed operation name "${operationName}"`,
+      )
+    }
+
+    return {
+      operationType: operationDef?.operation,
+      operationName: operationDef?.name?.value,
+    }
+  }
+
+  // check for anonymous definition
+  if (operationDefs.find((def) => !def.name?.value)) {
+    throw new Error('Anonymous operations must be the only defined operation.')
+  }
+
+  // find the operation definition to use using operationName
+  const operationDef = operationDefs.find(
+    (def) => def.name?.value === operationName,
+  )
+  if (!operationDef) {
+    throw new Error(
+      `Multiple operation definitions found but none match passed operation name "${operationName}"`,
+    )
+  }
 
   return {
     operationType: operationDef?.operation,
@@ -39,10 +80,13 @@ export function parseDocumentNode(node: DocumentNode): ParsedGraphQLQuery {
   }
 }
 
-function parseQuery(query: string): ParsedGraphQLQuery | Error {
+function parseQuery(
+  query: string,
+  operationName: string | null,
+): ParsedGraphQLQuery | Error {
   try {
     const ast = parse(query)
-    return parseDocumentNode(ast)
+    return parseDocumentNode(ast, operationName)
   } catch (error) {
     return error as Error
   }
@@ -90,21 +134,24 @@ function getGraphQLInput(request: MockedRequest<any>): GraphQLInput | null {
   switch (request.method) {
     case 'GET': {
       const query = request.url.searchParams.get('query')
+      const operationName = request.url.searchParams.get('operationName')
       const variables = request.url.searchParams.get('variables') || ''
 
       return {
         query,
+        operationName,
         variables: jsonParse(variables),
       }
     }
 
     case 'POST': {
       if (request.body?.query) {
-        const { query, variables } = request.body
+        const { query, variables, operationName } = request.body
 
         return {
           query,
           variables,
+          operationName,
         }
       }
 
@@ -113,9 +160,11 @@ function getGraphQLInput(request: MockedRequest<any>): GraphQLInput | null {
         const { operations, map, ...files } =
           request.body as GraphQLMultipartRequestBody
         const parsedOperations =
-          jsonParse<{ query?: string; variables?: GraphQLVariables }>(
-            operations,
-          ) || {}
+          jsonParse<{
+            query?: string
+            variables?: GraphQLVariables
+            operationName?: string
+          }>(operations) || {}
 
         if (!parsedOperations.query) {
           return null
@@ -133,6 +182,7 @@ function getGraphQLInput(request: MockedRequest<any>): GraphQLInput | null {
         return {
           query: parsedOperations.query,
           variables,
+          operationName: parsedOperations.operationName || null,
         }
       }
     }
@@ -155,8 +205,8 @@ export function parseGraphQLRequest(
     return undefined
   }
 
-  const { query, variables } = input
-  const parsedResult = parseQuery(query)
+  const { query, variables, operationName } = input
+  const parsedResult = parseQuery(query, operationName)
 
   if (parsedResult instanceof Error) {
     const requestPublicUrl = getPublicUrlFromRequest(request)
