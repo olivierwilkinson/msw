@@ -1,9 +1,14 @@
 import {
   DocumentNode,
-  OperationDefinitionNode,
+  GraphQLError,
+  GraphQLSchema,
   OperationTypeNode,
   parse,
 } from 'graphql'
+import {
+  buildExecutionContext,
+  ExecutionContext,
+} from 'graphql/execution/execute'
 import { GraphQLVariables } from '../../handlers/GraphQLHandler'
 import { MockedRequest } from '../../handlers/RequestHandler'
 import { getPublicUrlFromRequest } from '../request/getPublicUrlFromRequest'
@@ -16,77 +21,59 @@ interface GraphQLInput {
   variables?: GraphQLVariables
 }
 
-export interface ParsedGraphQLQuery {
+export interface ParsedGraphQLDocumentNode {
   operationType: OperationTypeNode
   operationName?: string
 }
 
+export interface ParsedGraphQLQuery extends ParsedGraphQLDocumentNode {
+  document: DocumentNode
+}
+
 export type ParsedGraphQLRequest<
   VariablesType extends GraphQLVariables = GraphQLVariables,
-> =
-  | (ParsedGraphQLQuery & {
-      variables?: VariablesType
-    })
-  | undefined
+> = ParsedGraphQLQuery & {
+  variables?: VariablesType
+}
+
+function isExecutionContext(
+  context: ExecutionContext | readonly GraphQLError[],
+): context is ExecutionContext {
+  return !Array.isArray(context)
+}
 
 export function parseDocumentNode(
-  ast: DocumentNode,
-  operationName: string | null,
-): ParsedGraphQLQuery {
-  const operationDefs = ast.definitions.filter(
-    (def) => def.kind === 'OperationDefinition',
-  ) as OperationDefinitionNode[]
+  document: DocumentNode,
+  operationName?: string | null,
+): ParsedGraphQLDocumentNode {
+  // pass real schema and variable values to validate variables
+  const executionContext = buildExecutionContext({
+    schema: new GraphQLSchema({}),
+    document,
+    operationName,
+  })
 
-  if (operationDefs.length === 1) {
-    const [operationDef] = operationDefs
-    const defOperationName = operationDef.name?.value
-
-    if (defOperationName && operationName !== defOperationName) {
-      throw new Error(
-        `Operation definition "${defOperationName}" does not match passed operation name "${operationName}"`,
-      )
-    }
-
-    if (!defOperationName && operationName !== null) {
-      throw new Error(
-        `Anonymous operation definition does not match passed operation name "${operationName}"`,
-      )
-    }
-
-    return {
-      operationType: operationDef?.operation,
-      operationName: operationDef?.name?.value,
-    }
-  }
-
-  // check for anonymous definition
-  if (operationDefs.find((def) => !def.name?.value)) {
-    throw new Error('Anonymous operations must be the only defined operation.')
-  }
-
-  // find the operation definition to use using operationName
-  const operationDef = operationDefs.find(
-    (def) => def.name?.value === operationName,
-  )
-  if (!operationDef) {
-    throw new Error(
-      `Multiple operation definitions found but none match passed operation name "${operationName}"`,
-    )
+  if (!isExecutionContext(executionContext)) {
+    const errorMessages = executionContext.map((error) => error.message)
+    throw new Error(errorMessages.join('\n'))
   }
 
   return {
-    operationType: operationDef?.operation,
-    operationName: operationDef?.name?.value,
+    operationType: executionContext.operation.operation,
+    operationName: executionContext.operation.name?.value,
   }
 }
 
-function parseQuery(
+export function parseQuery(
   query: string,
   operationName: string | null,
 ): ParsedGraphQLQuery | Error {
   try {
-    const ast = parse(query)
-    return parseDocumentNode(ast, operationName)
+    const document = parse(query)
+    return {
+      document,
+      ...parseDocumentNode(document, operationName),
+    }
   } catch (error) {
     return error as Error
   }
@@ -198,7 +185,7 @@ function getGraphQLInput(request: MockedRequest<any>): GraphQLInput | null {
  */
 export function parseGraphQLRequest(
   request: MockedRequest<any>,
-): ParsedGraphQLRequest {
+): ParsedGraphQLRequest | undefined {
   const input = getGraphQLInput(request)
 
   if (!input || !input.query) {
@@ -222,6 +209,7 @@ export function parseGraphQLRequest(
   }
 
   return {
+    document: parsedResult.document,
     operationType: parsedResult.operationType,
     operationName: parsedResult.operationName,
     variables,

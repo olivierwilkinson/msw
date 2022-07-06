@@ -53,8 +53,8 @@ function createPostGraphQLRequest(
 }
 
 const GET_USER = `
-  query GetUser {
-    user {
+  query GetUser($userId: String!) {
+    user(id: $userId) {
       id
     }
   }
@@ -180,6 +180,7 @@ describe('parse', () => {
       expect(handler.parse(request)).toEqual({
         operationType: 'query',
         operationName: 'GetUser',
+        documentNode: parse(GET_USER),
         variables: undefined,
       })
     })
@@ -201,6 +202,7 @@ describe('parse', () => {
       expect(handler.parse(request)).toEqual({
         operationType: 'query',
         operationName: 'GetUser',
+        documentNode: parse(GET_USER),
         variables: {
           userId: 'abc-123',
         },
@@ -221,6 +223,7 @@ describe('parse', () => {
       expect(handler.parse(request)).toEqual({
         operationType: 'query',
         operationName: 'GetUser',
+        documentNode: parse(GET_USER),
         variables: undefined,
       })
     })
@@ -242,6 +245,7 @@ describe('parse', () => {
       expect(handler.parse(request)).toEqual({
         operationType: 'query',
         operationName: 'GetUser',
+        documentNode: parse(GET_USER),
         variables: {
           userId: 'abc-123',
         },
@@ -268,6 +272,7 @@ describe('parse', () => {
       expect(handler.parse(request)).toEqual({
         operationType: 'mutation',
         operationName: 'OtherQuery',
+        documentNode: parse(query),
       })
       expect(handler.parse(alienRequest)).toBe(undefined)
     })
@@ -288,6 +293,7 @@ describe('parse', () => {
       expect(handler.parse(request)).toEqual({
         operationType: 'mutation',
         operationName: 'Login',
+        documentNode: parse(LOGIN),
         variables: undefined,
       })
     })
@@ -309,6 +315,7 @@ describe('parse', () => {
       expect(handler.parse(request)).toEqual({
         operationType: 'mutation',
         operationName: 'Login',
+        documentNode: parse(LOGIN),
         variables: {
           userId: 'abc-123',
         },
@@ -329,6 +336,7 @@ describe('parse', () => {
       expect(handler.parse(request)).toEqual({
         operationType: 'mutation',
         operationName: 'Login',
+        documentNode: parse(LOGIN),
         variables: undefined,
       })
     })
@@ -350,6 +358,7 @@ describe('parse', () => {
       expect(handler.parse(request)).toEqual({
         operationType: 'mutation',
         operationName: 'Login',
+        documentNode: parse(LOGIN),
         variables: {
           userId: 'abc-123',
         },
@@ -376,6 +385,7 @@ describe('parse', () => {
       expect(handler.parse(request)).toEqual({
         operationType: 'mutation',
         operationName: 'OtherMutation',
+        documentNode: parse(query),
       })
       expect(handler.parse(alienRequest)).toBe(undefined)
     })
@@ -612,6 +622,8 @@ describe('run', () => {
       },
     })
     const result = await handler.run(request)
+    const documentNode = parse(GET_USER)
+    const data = context.createData(documentNode, 'GetUser')
 
     expect(result).toEqual({
       handler,
@@ -624,12 +636,13 @@ describe('run', () => {
       parsedResult: {
         operationType: 'query',
         operationName: 'GetUser',
+        documentNode,
         variables: {
           userId: 'abc-123',
         },
       },
       response: await response(
-        context.data({
+        data({
           user: { id: 'abc-123' },
         }),
       ),

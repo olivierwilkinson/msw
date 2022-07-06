@@ -1,6 +1,6 @@
 import { DocumentNode, OperationTypeNode } from 'graphql'
 import { SerializedResponse } from '../setupWorker/glossary'
-import { data } from '../context/data'
+import { createData } from '../context/data'
 import { extensions } from '../context/extensions'
 import { errors } from '../context/errors'
 import { field } from '../context/field'
@@ -44,15 +44,6 @@ export type GraphQLContext<QueryType extends Record<string, unknown>> =
     field: typeof field
   }
 
-export const graphqlContext: GraphQLContext<any> = {
-  ...defaultContext,
-  data,
-  extensions,
-  errors,
-  cookie,
-  field,
-}
-
 export type GraphQLVariables = Record<string, any>
 
 export interface GraphQLHandlerInfo extends RequestHandlerDefaultInfo {
@@ -92,7 +83,7 @@ export class GraphQLHandler<
 > extends RequestHandler<
   GraphQLHandlerInfo,
   Request,
-  ParsedGraphQLRequest | null,
+  ParsedGraphQLRequest | undefined,
   GraphQLRequest<any>
 > {
   private endpoint: Path
@@ -136,7 +127,6 @@ export class GraphQLHandler<
         operationType,
         operationSelector: resolvedOperationSelector,
       },
-      ctx: graphqlContext,
       resolver,
     })
 
@@ -160,7 +150,7 @@ export class GraphQLHandler<
     }
   }
 
-  predicate(request: MockedRequest, parsedResult: ParsedGraphQLRequest) {
+  predicate(request: MockedRequest, parsedResult?: ParsedGraphQLRequest) {
     if (!parsedResult) {
       return false
     }
@@ -190,6 +180,23 @@ Consider naming this operation or using "graphql.operation" request handler to i
       hasMatchingOperationType &&
       hasMatchingOperationName
     )
+  }
+
+  createContext(
+    request: ParsedGraphQLRequest<GraphQLVariables>,
+  ): GraphQLContext<any> {
+    return {
+      ...defaultContext,
+      extensions,
+      errors,
+      cookie,
+      field,
+      data: createData(
+        request.document,
+        request.operationName,
+        request.variables,
+      ),
+    }
   }
 
   log(
