@@ -16,23 +16,25 @@ interface GraphQLInput {
   variables?: GraphQLVariables
 }
 
-export interface ParsedGraphQLQuery {
+export interface ParsedGraphQLDocumentNode {
   operationType: OperationTypeNode
   operationName?: string
 }
 
+export interface ParsedGraphQLQuery extends ParsedGraphQLDocumentNode {
+  documentNode: DocumentNode
+}
+
 export type ParsedGraphQLRequest<
   VariablesType extends GraphQLVariables = GraphQLVariables,
-> =
-  | (ParsedGraphQLQuery & {
-      variables?: VariablesType
-    })
-  | undefined
+> = ParsedGraphQLQuery & {
+  variables?: VariablesType
+}
 
 export function parseDocumentNode(
   ast: DocumentNode,
   operationName: string | null,
-): ParsedGraphQLQuery {
+): ParsedGraphQLDocumentNode {
   const operationDefs = ast.definitions.filter(
     (def) => def.kind === 'OperationDefinition',
   ) as OperationDefinitionNode[]
@@ -85,8 +87,12 @@ function parseQuery(
   operationName: string | null,
 ): ParsedGraphQLQuery | Error {
   try {
-    const ast = parse(query)
-    return parseDocumentNode(ast, operationName)
+    const documentNode = parse(query)
+    const parsedDocumentNode = parseDocumentNode(documentNode, operationName)
+    return {
+      documentNode,
+      ...parsedDocumentNode,
+    }
   } catch (error) {
     return error as Error
   }
@@ -198,7 +204,7 @@ function getGraphQLInput(request: MockedRequest<any>): GraphQLInput | null {
  */
 export function parseGraphQLRequest(
   request: MockedRequest<any>,
-): ParsedGraphQLRequest {
+): ParsedGraphQLRequest | undefined {
   const input = getGraphQLInput(request)
 
   if (!input || !input.query) {
@@ -222,6 +228,7 @@ export function parseGraphQLRequest(
   }
 
   return {
+    documentNode: parsedResult.documentNode,
     operationType: parsedResult.operationType,
     operationName: parsedResult.operationName,
     variables,

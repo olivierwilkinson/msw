@@ -3,7 +3,7 @@
  */
 import { field } from './field'
 import { response } from '../response'
-import { data } from './data'
+import { createData } from './data'
 import { errors } from './errors'
 
 test('sets a given field value string on the response JSON body', async () => {
@@ -31,6 +31,8 @@ test('sets a given field value object on the response JSON body', async () => {
 })
 
 test('combines with data, errors and other field in the response JSON body', async () => {
+  const data = createData()
+
   const result = await response(
     data({ name: 'msw' }),
     errors([{ message: 'exceeds the limit of awesomeness' }]),

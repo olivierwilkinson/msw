@@ -121,7 +121,6 @@ export abstract class RequestHandler<
   public info: HandlerInfo & RequestHandlerInternalInfo
   public shouldSkip: boolean
 
-  private ctx: ContextMap
   private resolverGenerator?: Generator<
     MaybeAsyncResponseResolverReturnType<any>,
     MaybeAsyncResponseResolverReturnType<any>,
@@ -133,7 +132,6 @@ export abstract class RequestHandler<
 
   constructor(options: RequestHandlerOptions<HandlerInfo>) {
     this.shouldSkip = false
-    this.ctx = options.ctx || defaultContext
     this.resolver = options.resolver
 
     const callFrame = getCallFrame(new Error())
@@ -199,6 +197,13 @@ export abstract class RequestHandler<
     return request as PublicRequest
   }
 
+  /**
+   * Create context to be passed to resolver
+   */
+  protected createContext(_parsedRequest: ParsedResult) {
+    return defaultContext
+  }
+
   public markAsSkipped(shouldSkip = true) {
     this.shouldSkip = shouldSkip
   }
@@ -234,7 +239,7 @@ export abstract class RequestHandler<
     const mockedResponse = await executeResolver(
       publicRequest,
       response,
-      this.ctx,
+      this.createContext(parsedResult),
     )
 
     return this.createExecutionResult(
