@@ -1,6 +1,6 @@
 import { DocumentNode, OperationTypeNode } from 'graphql'
 import { SerializedResponse } from '../setupWorker/glossary'
-import { createData } from '../context/data'
+import { data } from '../context/data'
 import { extensions } from '../context/extensions'
 import { errors } from '../context/errors'
 import { field } from '../context/field'
@@ -37,12 +37,26 @@ export type GraphQLHandlerNameSelector = DocumentNode | RegExp | string
 // in the GraphQL universe.
 export type GraphQLContext<QueryType extends Record<string, unknown>> =
   DefaultContext & {
-    data: GraphQLPayloadContext<QueryType>
+    data: typeof data
     extensions: GraphQLPayloadContext<QueryType>
     errors: typeof errors
     cookie: typeof cookie
     field: typeof field
   }
+
+export type ResolverGraphQLContext<QueryType extends Record<string, unknown>> =
+  Omit<GraphQLContext<QueryType>, 'data'> & {
+    data: GraphQLPayloadContext<QueryType>
+  }
+
+export const graphqlContext: GraphQLContext<any> = {
+  ...defaultContext,
+  data,
+  extensions,
+  errors,
+  cookie,
+  field,
+}
 
 export type GraphQLVariables = Record<string, any>
 
@@ -182,20 +196,16 @@ Consider naming this operation or using "graphql.operation" request handler to i
     )
   }
 
-  createContext(
-    request: ParsedGraphQLRequest<GraphQLVariables>,
-  ): GraphQLContext<any> {
+  createContext(parsedRequest: ParsedGraphQLRequest<GraphQLVariables>) {
     return {
-      ...defaultContext,
-      extensions,
-      errors,
-      cookie,
-      field,
-      data: createData(
-        request.document,
-        request.operationName,
-        request.variables,
-      ),
+      ...graphqlContext,
+      data: (payload: Record<string, unknown>) =>
+        data(
+          payload,
+          parsedRequest.document,
+          parsedRequest.operationName,
+          parsedRequest.variables,
+        ),
     }
   }
 

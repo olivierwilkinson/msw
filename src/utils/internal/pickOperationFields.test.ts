@@ -376,7 +376,6 @@ test('picks fields from fragments', () => {
   })
 })
 
-// TODO:- include an inline fragment here
 test('picks combined fields from conditional fragments', () => {
   const combined = { id: '1357902468', type: 'unknown', name: null }
   const user = {

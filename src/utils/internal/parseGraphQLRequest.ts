@@ -24,6 +24,7 @@ interface GraphQLInput {
 export interface ParsedGraphQLDocumentNode {
   operationType: OperationTypeNode
   operationName?: string
+  variables: GraphQLVariables
 }
 
 export interface ParsedGraphQLQuery extends ParsedGraphQLDocumentNode {
@@ -45,12 +46,14 @@ function isExecutionContext(
 export function parseDocumentNode(
   document: DocumentNode,
   operationName?: string | null,
+  variables?: Record<string, unknown>,
 ): ParsedGraphQLDocumentNode {
-  // pass real schema and variable values to validate variables
+  // pass through real schema to coerce default input variables
   const executionContext = buildExecutionContext({
     schema: new GraphQLSchema({}),
     document,
     operationName,
+    variableValues: variables,
   })
 
   if (!isExecutionContext(executionContext)) {
@@ -61,18 +64,20 @@ export function parseDocumentNode(
   return {
     operationType: executionContext.operation.operation,
     operationName: executionContext.operation.name?.value,
+    variables: executionContext.variableValues,
   }
 }
 
 export function parseQuery(
   query: string,
   operationName: string | null,
+  variables?: GraphQLVariables,
 ): ParsedGraphQLQuery | Error {
   try {
     const document = parse(query)
     return {
       document,
-      ...parseDocumentNode(document, operationName),
+      ...parseDocumentNode(document, operationName, variables),
     }
   } catch (error) {
     return error as Error
@@ -192,8 +197,8 @@ export function parseGraphQLRequest(
     return undefined
   }
 
-  const { query, variables, operationName } = input
-  const parsedResult = parseQuery(query, operationName)
+  const { query, operationName, variables } = input
+  const parsedResult = parseQuery(query, operationName, variables)
 
   if (parsedResult instanceof Error) {
     const requestPublicUrl = getPublicUrlFromRequest(request)
@@ -212,6 +217,6 @@ export function parseGraphQLRequest(
     document: parsedResult.document,
     operationType: parsedResult.operationType,
     operationName: parsedResult.operationName,
-    variables,
+    variables: parsedResult.variables,
   }
 }

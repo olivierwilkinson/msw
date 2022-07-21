@@ -13,8 +13,7 @@ export { RequestHandler, defaultContext } from './handlers/RequestHandler'
 export { rest } from './rest'
 export { RestHandler, RESTMethods, restContext } from './handlers/RestHandler'
 export { graphql } from './graphql'
-// TODO:- export createGraphqlContext function
-export { GraphQLHandler } from './handlers/GraphQLHandler'
+export { GraphQLHandler, graphqlContext } from './handlers/GraphQLHandler'
 
 /* Utils */
 export { matchRequestUrl } from './utils/matching/matchRequestUrl'

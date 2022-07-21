@@ -1,14 +1,12 @@
 /**
  * @jest-environment jsdom
  */
-import { createData } from './data'
+import { data } from './data'
 import { errors } from './errors'
 import { response } from '../response'
 import { parse } from 'graphql'
 
 test('sets a single data on the response JSON body', async () => {
-  const data = createData()
-
   const result = await response(data({ name: 'msw' }))
 
   expect(result.headers.get('content-type')).toBe('application/json')
@@ -22,10 +20,10 @@ test('sets a single data on the response JSON body', async () => {
   )
 })
 
-test('sets a single data on the response JSON body when created with documentNode', async () => {
-  const data = createData(parse('query { name }'))
+test('sets a single data on the response JSON body when passed documentNode', async () => {
+  const documentNode = parse('query { name }')
 
-  const result = await response(data({ name: 'msw' }))
+  const result = await response(data({ name: 'msw' }, documentNode))
 
   expect(result.headers.get('content-type')).toBe('application/json')
   expect(result).toHaveProperty(
@@ -39,8 +37,6 @@ test('sets a single data on the response JSON body when created with documentNod
 })
 
 test('sets multiple data on the response JSON body', async () => {
-  const data = createData()
-
   const result = await response(
     data({ name: 'msw' }),
     data({ description: 'API mocking library' }),
@@ -60,11 +56,10 @@ test('sets multiple data on the response JSON body', async () => {
 
 test('sets multiple data on the response JSON body when created with documentNode', async () => {
   const documentNode = parse('query { name description }')
-  const data = createData(documentNode)
 
   const result = await response(
-    data({ name: 'msw' }),
-    data({ description: 'API mocking library' }),
+    data({ name: 'msw' }, documentNode),
+    data({ description: 'API mocking library' }, documentNode),
   )
 
   expect(result.headers.get('content-type')).toBe('application/json')
@@ -80,8 +75,6 @@ test('sets multiple data on the response JSON body when created with documentNod
 })
 
 test('combines with error in the response JSON body', async () => {
-  const data = createData()
-
   const result = await response(
     data({ name: 'msw' }),
     errors([
@@ -107,11 +100,11 @@ test('combines with error in the response JSON body', async () => {
   )
 })
 
-test('combines with error in the response JSON body when created with documentNode', async () => {
-  const data = createData(parse('query { name }'))
+test('combines with error in the response JSON body when passed documentNode', async () => {
+  const documentNode = parse('query { name }')
 
   const result = await response(
-    data({ name: 'msw' }),
+    data({ name: 'msw' }, documentNode),
     errors([
       {
         message: 'exceeds the limit of awesomeness',
@@ -135,29 +128,61 @@ test('combines with error in the response JSON body when created with documentNo
   )
 })
 
-test('deep picks fields when created with documentNode with anonymous query', async () => {
+test('deep picks fields when passed documentNode', async () => {
+  const business = {
+    __typename: 'Business',
+    id: '1357924680',
+    name: 'ACME',
+    email: 'acme@nomail.com',
+    type: 'SME',
+  }
   const jill = {
     __typename: 'User',
     id: '0987654321',
     name: 'Jill',
     age: 10,
+    eldestSibling: null,
+    phone: '+1234567890',
   }
   const jack = {
     __typename: 'User',
     id: '1234567890',
     name: 'Jack',
     age: 11,
-    siblings: [jill],
     eldestSibling: jill,
+    phone: '+10987654321',
+    emergencyContacts: [jill, business],
   }
 
-  const data = createData(
-    parse(
-      'query { user { __typename id siblings { name } eldestSibling { age }  } }',
-    ),
-  )
+  const documentNode = parse(`
+    query {
+      user {
+        __typename
+        id
+        ...UserRelations
+      }
+      business {
+        id
+        type
+      }
+    }
 
-  const result = await response(data({ user: jack }))
+    fragment UserRelations on User {
+      eldestSibling { age }
+      emergencyContacts {
+        ... on User {
+          name
+          phone
+        }
+        ... on Business {
+          name
+          email
+        }
+      }
+    }
+  `)
+
+  const result = await response(data({ user: jack, business }, documentNode))
 
   expect(result.headers.get('content-type')).toBe('application/json')
   expect(result).toHaveProperty(
@@ -165,57 +190,24 @@ test('deep picks fields when created with documentNode with anonymous query', as
     JSON.stringify({
       data: {
         user: {
-          __typename: 'User',
+          __typename: jack.__typename,
           id: jack.id,
-          siblings: [{ name: jill.name }],
           eldestSibling: { age: jill.age },
+          emergencyContacts: [
+            { name: jill.name, phone: jill.phone },
+            { name: business.name, email: business.email },
+          ],
+        },
+        business: {
+          id: business.id,
+          type: business.type,
         },
       },
     }),
   )
 })
 
-test('deep picks fields when documentNode with anonymous mutation passed', async () => {
-  const jill = {
-    __typename: 'User',
-    id: '0987654321',
-    name: 'Jill',
-    age: 10,
-  }
-  const jack = {
-    __typename: 'User',
-    id: '1234567890',
-    name: 'Jack',
-    age: 11,
-    siblings: [jill],
-    eldestSibling: jill,
-  }
-
-  const data = createData(
-    parse(
-      'mutation { user { __typename id siblings { name } eldestSibling { age }  } }',
-    ),
-  )
-
-  const result = await response(data({ user: jack }))
-
-  expect(result.headers.get('content-type')).toBe('application/json')
-  expect(result).toHaveProperty(
-    'body',
-    JSON.stringify({
-      data: {
-        user: {
-          __typename: 'User',
-          id: jack.id,
-          siblings: [{ name: jill.name }],
-          eldestSibling: { age: jill.age },
-        },
-      },
-    }),
-  )
-})
-
-test('deep picks fields when created with documentNode with named operations and an operationName', async () => {
+test('deep picks correct fields when passed documentNode with named operations and an operationName', async () => {
   const jill = {
     __typename: 'User',
     id: '0987654321',
@@ -246,9 +238,8 @@ test('deep picks fields when created with documentNode with named operations and
       }
     }
   `)
-  const data = createData(documentNode, 'GetUser')
 
-  const result = await response(data({ user: jack }))
+  const result = await response(data({ user: jack }, documentNode, 'GetUser'))
 
   expect(result.headers.get('content-type')).toBe('application/json')
   expect(result).toHaveProperty(
@@ -266,114 +257,7 @@ test('deep picks fields when created with documentNode with named operations and
   )
 })
 
-test('deep picks fields when created with documentNode with a fragment', async () => {
-  const jill = {
-    __typename: 'User',
-    id: '0987654321',
-    name: 'Jill',
-    age: 10,
-  }
-  const jack = {
-    __typename: 'User',
-    id: '1234567890',
-    name: 'Jack',
-    age: 11,
-    siblings: [jill],
-    eldestSibling: jill,
-  }
-
-  const documentNode = parse(`
-    query {
-      user {
-        __typename
-        id
-        siblings { ...Sibling }
-        eldestSibling { ...Sibling }
-      }
-    }
-
-    fragment Sibling on User {
-      name
-      age
-    }
-  `)
-  const data = createData(documentNode)
-
-  const result = await response(data({ user: jack }))
-
-  expect(result.headers.get('content-type')).toBe('application/json')
-  expect(result).toHaveProperty(
-    'body',
-    JSON.stringify({
-      data: {
-        user: {
-          __typename: 'User',
-          id: jack.id,
-          siblings: [{ name: jill.name, age: jill.age }],
-          eldestSibling: { name: jill.name, age: jill.age },
-        },
-      },
-    }),
-  )
-})
-
-test('deep picks fields when created with documentNode with nested fragments', async () => {
-  const jill = {
-    __typename: 'User',
-    id: '0987654321',
-    name: 'Jill',
-    age: 10,
-  }
-  const jack = {
-    __typename: 'User',
-    id: '1234567890',
-    name: 'Jack',
-    age: 11,
-    siblings: [jill],
-    eldestSibling: jill,
-  }
-
-  const documentNode = parse(`
-    query {
-      user {
-        __typename
-        id
-        siblings { ...Sibling }
-        eldestSibling { ...Sibling }
-      }
-    }
-
-    fragment SiblingRelations on User {
-      siblings { ...Sibling }
-      eldestSibling { ...Sibling }
-    }
-
-    fragment Sibling on User {
-      name
-      age
-    }
-  `)
-  const data = createData(documentNode)
-
-  const result = await response(data({ user: jack }))
-
-  expect(result.headers.get('content-type')).toBe('application/json')
-  expect(result).toHaveProperty(
-    'body',
-    JSON.stringify({
-      data: {
-        user: {
-          __typename: 'User',
-          id: jack.id,
-          siblings: [{ name: jill.name, age: jill.age }],
-          eldestSibling: { name: jill.name, age: jill.age },
-        },
-      },
-    }),
-  )
-})
-
-test('deep picks fields from payloads with circular references when created with documentNode', async () => {
+test('deep picks fields from payloads with circular references when passed documentNode', async () => {
   type User = {
     __typename: 'User'
     id: string
@@ -401,11 +285,17 @@ test('deep picks fields from payloads with circular references when created with
   jill.siblings = [jack]
   jill.eldestSibling = jack
 
-  const data = createData(
-    parse('query { user { name siblings { name } eldestSibling { age } } }'),
-  )
+  const documentNode = parse(`
+    query {
+      user {
+        name
+        siblings { name }
+        eldestSibling { age }
+      }
+    }
+  `)
 
-  const result = await response(data({ user: jack }))
+  const result = await response(data({ user: jack }, documentNode))
 
   expect(result.headers.get('content-type')).toBe('application/json')
   expect(result).toHaveProperty(
@@ -422,7 +312,7 @@ test('deep picks fields from payloads with circular references when created with
   )
 })
 
-test('throws when created with documentNode with named operation but no operationName', async () => {
+test('throws when passed documentNode with named operation but no operationName', async () => {
   const jill = {
     __typename: 'User',
     id: '0987654321',
@@ -430,14 +320,14 @@ test('throws when created with documentNode with named operation but no operatio
     age: 10,
   }
 
-  const data = createData(parse('query GetUser { user { id } }'))
+  const documentNode = parse('query GetUser { user { id } }')
 
-  await expect(response(data({ user: jill }))).rejects.toThrow(
+  await expect(response(data({ user: jill }, documentNode))).rejects.toThrow(
     'Unable to find anonymous query, pass operationName to choose an operation',
   )
 })
 
-test('throws when created with documentNode with named operation and a non-matching operationName', async () => {
+test('throws when passed operationName that does not match an operation in documentNode', async () => {
   const jill = {
     __typename: 'User',
     id: '0987654321',
@@ -445,14 +335,11 @@ test('throws when created with documentNode with named operation and a non-match
     age: 10,
   }
 
-  const data = createData(
-    parse('query GetUser { user { id } }'),
-    'UnrelatedQuery',
-  )
+  const documentNode = parse('query GetUser { user { id } }')
 
-  await expect(response(data({ user: jill }))).rejects.toThrow(
-    'Unable to find operation named "UnrelatedQuery"',
-  )
+  await expect(
+    response(data({ user: jill }, documentNode, 'UnrelatedQuery')),
+  ).rejects.toThrow('Unable to find operation named "UnrelatedQuery"')
 })
 
 test('throws when passed payload with circular references when not created with documentNode', async () => {
@@ -482,8 +369,6 @@ test('throws when passed payload with circular references when not created with 
   }
   jill.siblings = [jack]
   jill.eldestSibling = jack
-
-  const data = createData()
 
   await expect(response(data({ user: jack }))).rejects.toThrow(
     /Converting circular structure to JSON/,

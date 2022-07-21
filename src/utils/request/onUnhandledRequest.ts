@@ -90,16 +90,19 @@ function getGraphQLHandlerScore(
       return Infinity
     }
 
-    const { operationType, operationName } = handler.info
+    const { operationType, operationSelector } = handler.info
 
-    if (typeof operationName !== 'string') {
+    if (typeof operationSelector !== 'string') {
       return Infinity
     }
 
     const hasSameOperationType = parsedQuery.operationType === operationType
     // Always treat a handler with the same operation type as a more similar one.
     const operationTypeScoreDelta = hasSameOperationType ? TYPE_MATCH_DELTA : 0
-    const score = getStringMatchScore(parsedQuery.operationName, operationName)
+    const score = getStringMatchScore(
+      parsedQuery.operationName,
+      operationSelector,
+    )
 
     return score - operationTypeScoreDelta
   }

@@ -82,11 +82,13 @@ function pickSelectionSet(
     selectionSet,
   )
 
+  const dataKeys = Object.keys(data)
   const pickedData: Record<string, unknown> = {}
 
   Array.from(fieldMap.values()).forEach((fieldNodes) => {
     fieldNodes.forEach((fieldNode) => {
-      if (data.hasOwnProperty(fieldNode.name.value)) {
+      // Don't use hasOwnProperty to support null prototype objects
+      if (dataKeys.includes(fieldNode.name.value)) {
         const fieldData = data[fieldNode.name.value]
 
         pickedData[fieldNode.name.value] = Array.isArray(fieldData)

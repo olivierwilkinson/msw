@@ -21,6 +21,7 @@ export const graphqlOperation = (url: string) => {
 
 interface GraphQLRequestPayload {
   query: string
+  operationName?: string
   variables?: Record<string, any>
 }
 

@@ -61,6 +61,7 @@ test('adds extensions to the original response data', async () => {
       'content-type': 'application/json',
     },
     body: JSON.stringify({
+      operationName: 'GetUser',
       query: gql`
         query GetUser {
           user {

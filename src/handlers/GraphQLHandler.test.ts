@@ -14,6 +14,7 @@ import {
   isDocumentNode,
 } from './GraphQLHandler'
 import { MockedRequest, ResponseResolver } from './RequestHandler'
+import { silenceErrorLogs } from '../../test/support/silenceErrorLogs'
 
 const resolver: ResponseResolver<
   GraphQLRequest<{ userId: string }>,
@@ -33,6 +34,7 @@ function createGetGraphQLRequest(
   const requestUrl = new URL(hostname)
   requestUrl.searchParams.set('query', body?.query)
   requestUrl.searchParams.set('variables', JSON.stringify(body?.variables))
+  requestUrl.searchParams.set('operationName', body?.operationName)
   return createMockedRequest({
     url: requestUrl,
   })
@@ -52,6 +54,14 @@ function createPostGraphQLRequest(
   })
 }
 
+const GET_ALL_USERS = `
+  query GetAllUsers {
+    users {
+      id
+    }
+  }
+`
+
 const GET_USER = `
   query GetUser($userId: String!) {
     user(id: $userId) {
@@ -64,6 +74,15 @@ const LOGIN = `
   mutation Login {
     user {
       id
+    }
+  }
+`
+
+const UPDATE_USER = `
+  mutation UpdateUser($userId: String! $firstName: String!) {
+    updateUser(id: $userId firstName: $firstName) {
+      id
+      firstName
     }
   }
 `
@@ -154,34 +173,24 @@ describe('info', () => {
 })
 
 describe('parse', () => {
-  // silence error logs from parse failures
-  let consoleErrorSpy: jest.SpyInstance
-  beforeAll(() => {
-    consoleErrorSpy = jest
-      .spyOn(console, 'error')
-      .mockImplementation(() => undefined)
-  })
-  afterAll(() => {
-    consoleErrorSpy.mockRestore()
-  })
-
   describe('query', () => {
     test('parses a query without variables (GET)', () => {
       const handler = new GraphQLHandler(
         OperationTypeNode.QUERY,
-        'GetUser',
+        'GetAllUsers',
         '*',
         resolver,
       )
       const request = createGetGraphQLRequest({
-        query: GET_USER,
+        query: GET_ALL_USERS,
+        operationName: 'GetAllUsers',
       })
 
       expect(handler.parse(request)).toEqual({
         operationType: 'query',
-        operationName: 'GetUser',
-        documentNode: parse(GET_USER),
-        variables: undefined,
+        operationName: 'GetAllUsers',
+        document: parse(GET_ALL_USERS),
+        variables: {},
       })
     })
 
@@ -194,6 +203,7 @@ describe('parse', () => {
       )
       const request = createGetGraphQLRequest({
         query: GET_USER,
+        operationName: 'GetUser',
         variables: {
           userId: 'abc-123',
         },
@@ -202,7 +212,7 @@ describe('parse', () => {
       expect(handler.parse(request)).toEqual({
         operationType: 'query',
         operationName: 'GetUser',
-        documentNode: parse(GET_USER),
+        document: parse(GET_USER),
         variables: {
           userId: 'abc-123',
         },
@@ -212,19 +222,20 @@ describe('parse', () => {
     test('parses a query without variables (POST)', () => {
       const handler = new GraphQLHandler(
         OperationTypeNode.QUERY,
-        'GetUser',
+        'GetAllUsers',
         '*',
         resolver,
       )
       const request = createPostGraphQLRequest({
-        query: GET_USER,
+        query: GET_ALL_USERS,
+        operationName: 'GetAllUsers',
       })
 
       expect(handler.parse(request)).toEqual({
         operationType: 'query',
-        operationName: 'GetUser',
-        documentNode: parse(GET_USER),
-        variables: undefined,
+        operationName: 'GetAllUsers',
+        document: parse(GET_ALL_USERS),
+        variables: {},
       })
     })
 
@@ -245,7 +256,7 @@ describe('parse', () => {
       expect(handler.parse(request)).toEqual({
         operationType: 'query',
         operationName: 'GetUser',
-        documentNode: parse(GET_USER),
+        document: parse(GET_USER),
         variables: {
           userId: 'abc-123',
         },
@@ -255,26 +266,32 @@ describe('parse', () => {
     test('parses a query with multiple operations when operation name passed', () => {
       const handler = new GraphQLHandler(
         OperationTypeNode.QUERY,
-        'GetUser',
+        'GetAllUsers',
         '*',
         resolver,
       )
 
-      const query = `${LOGIN} mutation OtherQuery { id }`
+      const query = `
+        ${GET_ALL_USERS}
+        ${LOGIN}
+      `
       const request = createPostGraphQLRequest({
         query,
-        operationName: 'OtherQuery',
+        operationName: 'GetAllUsers',
       })
       const alienRequest = createPostGraphQLRequest({
         query,
       })
 
       expect(handler.parse(request)).toEqual({
-        operationType: 'mutation',
-        operationName: 'OtherQuery',
-        documentNode: parse(query),
+        operationType: 'query',
+        operationName: 'GetAllUsers',
+        document: parse(query),
+        variables: {},
       })
-      expect(handler.parse(alienRequest)).toBe(undefined)
+      expect(
+        silenceErrorLogs(() => handler.parse(alienRequest)),
+      ).toBeUndefined()
     })
   })
 
@@ -282,42 +299,53 @@ describe('parse', () => {
     test('parses a mutation without variables (GET)', () => {
       const handler = new GraphQLHandler(
         OperationTypeNode.MUTATION,
-        'GetUser',
+        'PingPong',
         '*',
         resolver,
       )
+      const query = `
+        mutation PingPong {
+          pingPong {
+            id
+          }
+        }
+      `
       const request = createGetGraphQLRequest({
-        query: LOGIN,
+        query,
+        operationName: 'PingPong',
       })
 
       expect(handler.parse(request)).toEqual({
         operationType: 'mutation',
-        operationName: 'Login',
-        documentNode: parse(LOGIN),
-        variables: undefined,
+        operationName: 'PingPong',
+        document: parse(query),
+        variables: {},
       })
     })
 
     test('parses a mutation with variables (GET)', () => {
       const handler = new GraphQLHandler(
         OperationTypeNode.MUTATION,
-        'GetUser',
+        'UpdateUser',
         '*',
         resolver,
       )
       const request = createGetGraphQLRequest({
-        query: LOGIN,
+        query: UPDATE_USER,
+        operationName: 'UpdateUser',
         variables: {
           userId: 'abc-123',
+          firstName: 'Jack',
         },
       })
 
       expect(handler.parse(request)).toEqual({
         operationType: 'mutation',
-        operationName: 'Login',
-        documentNode: parse(LOGIN),
+        operationName: 'UpdateUser',
+        document: parse(UPDATE_USER),
         variables: {
           userId: 'abc-123',
+          firstName: 'Jack',
         },
       })
     })
@@ -325,7 +353,7 @@ describe('parse', () => {
     test('parses a mutation without variables (POST)', () => {
       const handler = new GraphQLHandler(
         OperationTypeNode.MUTATION,
-        'GetUser',
+        'Login',
         '*',
         resolver,
       )
@@ -336,31 +364,34 @@ describe('parse', () => {
       expect(handler.parse(request)).toEqual({
         operationType: 'mutation',
         operationName: 'Login',
-        documentNode: parse(LOGIN),
-        variables: undefined,
+        document: parse(LOGIN),
+        variables: {},
       })
     })
 
     test('parses a mutation with variables (POST)', () => {
       const handler = new GraphQLHandler(
         OperationTypeNode.MUTATION,
-        'GetUser',
+        'UpdateUser',
         '*',
         resolver,
       )
+
       const request = createPostGraphQLRequest({
-        query: LOGIN,
+        query: UPDATE_USER,
         variables: {
           userId: 'abc-123',
+          firstName: 'Jack',
         },
       })
 
       expect(handler.parse(request)).toEqual({
         operationType: 'mutation',
-        operationName: 'Login',
-        documentNode: parse(LOGIN),
+        operationName: 'UpdateUser',
+        document: parse(UPDATE_USER),
         variables: {
           userId: 'abc-123',
+          firstName: 'Jack',
         },
       })
     })
@@ -373,10 +404,13 @@ describe('parse', () => {
         resolver,
       )
 
-      const query = `${LOGIN} mutation OtherMutation { id }`
+      const query = `
+        ${LOGIN}
+        mutation OtherMutation { id }
+      `
       const request = createPostGraphQLRequest({
         query,
-        operationName: 'OtherMutation',
+        operationName: 'Login',
       })
       const alienRequest = createPostGraphQLRequest({
         query,
@@ -384,10 +418,36 @@ describe('parse', () => {
 
       expect(handler.parse(request)).toEqual({
         operationType: 'mutation',
-        operationName: 'OtherMutation',
-        documentNode: parse(query),
+        operationName: 'Login',
+        document: parse(query),
+        variables: {},
       })
       expect(handler.parse(alienRequest)).toBe(undefined)
+    })
+
+    test('fails to parse a mutation with incorrect variables (POST)', () => {
+      const handler = new GraphQLHandler(
+        OperationTypeNode.MUTATION,
+        'UpdateUser',
+        '*',
+        resolver,
+      )
+      const query = `
+        mutation UpdateUser($userId: String! $firstName: String!) {
+          updateUser(id: $userId firstName: $firstName) {
+            id
+            firstName
+          }
+        }
+      `
+      const request = createPostGraphQLRequest({
+        query,
+        variables: {
+          userId: 'abc-123',
+        },
+      })
+
+      expect(handler.parse(request)).toBeUndefined()
     })
   })
 })
@@ -396,15 +456,17 @@ describe('predicate', () => {
   test('respects operation type', () => {
     const handler = new GraphQLHandler(
       OperationTypeNode.QUERY,
-      'GetUser',
+      'GetAllUsers',
       '*',
       resolver,
     )
     const request = createPostGraphQLRequest({
-      query: GET_USER,
+      query: GET_ALL_USERS,
+      operationName: 'GetAllUsers',
     })
     const alienRequest = createPostGraphQLRequest({
       query: LOGIN,
+      operationName: 'Login',
     })
 
     expect(handler.predicate(request, handler.parse(request))).toBe(true)
@@ -414,23 +476,23 @@ describe('predicate', () => {
   })
 
   test('respects operation name', () => {
+    const query = `
+      ${GET_ALL_USERS}
+      query OtherQuery { other { id } }
+    `
     const handler = new GraphQLHandler(
       OperationTypeNode.QUERY,
-      'GetUser',
+      'GetAllUsers',
       '*',
       resolver,
     )
     const request = createPostGraphQLRequest({
-      query: GET_USER,
+      query,
+      operationName: 'GetAllUsers',
     })
     const alienRequest = createPostGraphQLRequest({
-      query: `
-          query GetAllUsers {
-            user {
-              id
-            }
-          }
-        `,
+      query,
+      operationName: 'OtherQuery',
     })
 
     expect(handler.predicate(request, handler.parse(request))).toBe(true)
@@ -458,18 +520,20 @@ describe('predicate', () => {
   test('respects custom endpoint', () => {
     const handler = new GraphQLHandler(
       OperationTypeNode.QUERY,
-      'GetUser',
+      'GetAllUsers',
       'https://api.github.com/graphql',
       resolver,
     )
     const request = createPostGraphQLRequest(
       {
-        query: GET_USER,
+        query: GET_ALL_USERS,
+        operationName: 'GetAllUsers',
       },
       'https://api.github.com/graphql',
     )
     const alienRequest = createPostGraphQLRequest({
-      query: GET_USER,
+      query: GET_ALL_USERS,
+      operationName: 'GetAllUsers',
     })
 
     expect(handler.predicate(request, handler.parse(request))).toBe(true)
@@ -482,7 +546,8 @@ describe('predicate', () => {
     const handler = new GraphQLHandler('all', 'GetUser', '*', resolver)
 
     const request = createPostGraphQLRequest({
-      query: GET_USER,
+      query: GET_ALL_USERS,
+      operationName: 'GetAllUsers',
     })
 
     expect(handler.predicate(request, undefined))
@@ -490,78 +555,67 @@ describe('predicate', () => {
 })
 
 describe('test', () => {
-  // silence error logs from parse failures
-  let consoleErrorSpy: jest.SpyInstance
-  beforeAll(() => {
-    consoleErrorSpy = jest
-      .spyOn(console, 'error')
-      .mockImplementation(() => undefined)
-  })
-  afterAll(() => {
-    consoleErrorSpy.mockRestore()
-  })
-
   test('respects operation type', () => {
     const handler = new GraphQLHandler(
       OperationTypeNode.QUERY,
-      'GetUser',
+      'GetAllUsers',
       '*',
       resolver,
     )
     const request = createPostGraphQLRequest({
-      query: GET_USER,
+      query: GET_ALL_USERS,
+      operationName: 'GetAllUsers',
     })
     const alienRequest = createPostGraphQLRequest({
       query: LOGIN,
+      operationName: 'Login',
     })
 
     expect(handler.test(request)).toBe(true)
-    expect(handler.test(alienRequest)).toBe(false)
+    expect(silenceErrorLogs(() => handler.test(alienRequest))).toBe(false)
   })
 
   test('respects operation name', () => {
     const handler = new GraphQLHandler(
       OperationTypeNode.QUERY,
-      'GetUser',
+      'GetAllUsers',
       '*',
       resolver,
     )
     const request = createPostGraphQLRequest({
-      query: GET_USER,
+      query: GET_ALL_USERS,
+      operationName: 'GetAllUsers',
     })
     const alienRequest = createPostGraphQLRequest({
-      query: `
-          query GetAllUsers {
-            user {
-              id
-            }
-          }
-        `,
+      query: `query OtherQuery { other { id } }`,
+      operationName: 'OtherQuery',
     })
 
     expect(handler.test(request)).toBe(true)
-    expect(handler.test(alienRequest)).toBe(false)
+    expect(silenceErrorLogs(() => handler.test(alienRequest))).toBe(false)
   })
 
   test('respects custom endpoint', () => {
     const handler = new GraphQLHandler(
       OperationTypeNode.QUERY,
-      'GetUser',
+      'GetAllUsers',
       'https://api.github.com/graphql',
       resolver,
     )
     const request = createPostGraphQLRequest(
       {
-        query: GET_USER,
+        query: GET_ALL_USERS,
+        operationName: 'GetAllUsers',
       },
       'https://api.github.com/graphql',
     )
     const alienRequest = createPostGraphQLRequest({
-      query: GET_USER,
+      query: GET_ALL_USERS,
+      operationName: 'GetAllUsers',
     })
 
     expect(handler.test(request)).toBe(true)
-    expect(handler.test(alienRequest)).toBe(false)
+    expect(silenceErrorLogs(() => handler.test(alienRequest))).toBe(false)
   })
 
   test('respects queries with multiple operations when also provided a operation name', () => {
@@ -572,17 +626,17 @@ describe('test', () => {
       resolver,
     )
 
-    const query = `${GET_USER} query OtherQuery { id }`
+    const query = `${GET_ALL_USERS} query OtherQuery { id }`
     const request = createPostGraphQLRequest({
       query,
-      operationName: 'GetUser',
+      operationName: 'GetAllUsers',
     })
     const alienRequest = createPostGraphQLRequest({
       query,
     })
 
     expect(handler.test(request)).toBe(true)
-    expect(handler.test(alienRequest)).toBe(false)
+    expect(silenceErrorLogs(() => handler.test(alienRequest))).toBe(false)
   })
 
   test('respects mutations with multiple operations when also provided a operation name', () => {
@@ -603,7 +657,7 @@ describe('test', () => {
     })
 
     expect(handler.test(request)).toBe(true)
-    expect(handler.test(alienRequest)).toBe(false)
+    expect(silenceErrorLogs(() => handler.test(alienRequest))).toBe(false)
   })
 })
 
@@ -622,8 +676,7 @@ describe('run', () => {
       },
     })
     const result = await handler.run(request)
-    const documentNode = parse(GET_USER)
-    const data = context.createData(documentNode, 'GetUser')
+    const document = parse(GET_USER)
 
     expect(result).toEqual({
       handler,
@@ -636,15 +689,13 @@ describe('run', () => {
       parsedResult: {
         operationType: 'query',
         operationName: 'GetUser',
-        documentNode,
+        document,
         variables: {
           userId: 'abc-123',
         },
       },
       response: await response(
-        data({
-          user: { id: 'abc-123' },
-        }),
+        context.data({ user: { id: 'abc-123' } }, document, 'GetUser'),
       ),
     })
   })

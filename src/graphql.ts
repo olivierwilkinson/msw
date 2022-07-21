@@ -2,7 +2,7 @@ import { DocumentNode, OperationTypeNode } from 'graphql'
 import { ResponseResolver } from './handlers/RequestHandler'
 import {
   GraphQLHandler,
-  GraphQLContext,
+  ResolverGraphQLContext,
   GraphQLRequest,
   GraphQLVariables,
   ExpectedOperationTypeNode,
@@ -33,7 +33,7 @@ function createScopedGraphQLHandler(
       | TypedDocumentNode<Query, Variables>,
     resolver: ResponseResolver<
       GraphQLRequest<Variables>,
-      GraphQLContext<Query>
+      ResolverGraphQLContext<Query>
     >,
   ) => {
     return new GraphQLHandler<GraphQLRequest<Variables>>(
@@ -52,7 +52,7 @@ function createGraphQLOperationHandler(url: Path) {
   >(
     resolver: ResponseResolver<
       GraphQLRequest<Variables>,
-      GraphQLContext<Query>
+      ResolverGraphQLContext<Query>
     >,
   ) => {
     return new GraphQLHandler<GraphQLRequest<Variables>>(

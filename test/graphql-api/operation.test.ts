@@ -26,6 +26,7 @@ test('intercepts and mocks a GraphQL query', async () => {
 
   const res = await executeGraphQLQuery(runtime.page, {
     query: GET_USER_QUERY,
+    operationName: 'GetUser',
     variables: {
       id: 'abc-123',
     },
@@ -104,6 +105,7 @@ test('intercepts and mocks a GraphQL mutation', async () => {
 
   const res = await executeGraphQLQuery(runtime.page, {
     query: LOGIN_MUTATION,
+    operationName: 'Login',
     variables: {
       username: 'john',
       password: 'super-secret',

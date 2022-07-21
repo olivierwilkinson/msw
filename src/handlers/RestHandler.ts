@@ -102,6 +102,7 @@ export class RestHandler<
         path,
         method,
       },
+      ctx: restContext,
       resolver,
     })
 
@@ -159,10 +160,6 @@ export class RestHandler<
         : isStringEqual(this.info.method, request.method)
 
     return matchesMethod && parsedResult.matches
-  }
-
-  createContext() {
-    return restContext
   }
 
   log(request: RequestType, response: SerializedResponse) {

@@ -15,6 +15,7 @@ interface GraphQLClientOPtions {
 
 interface GraphQLOperationInput {
   query: TemplateStringsArray | string
+  operationName?: string
   variables?: Record<string, any>
 }
 

@@ -89,6 +89,7 @@ test('patches a GraphQL response', async () => {
   })
 
   const res = await client({
+    operationName: 'GetUser',
     query: gql`
       query GetUser {
         user {

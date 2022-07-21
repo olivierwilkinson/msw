@@ -2,7 +2,7 @@
  * @jest-environment jsdom
  */
 import { errors } from './errors'
-import { createData } from './data'
+import { data } from './data'
 import { extensions } from './extensions'
 import { response } from '../response'
 
@@ -22,8 +22,6 @@ test('sets standalone extensions on the response JSON body', async () => {
 })
 
 test('sets given extensions on the response JSON body with data', async () => {
-  const data = createData()
-
   const result = await response(
     data({ hello: 'world' }),
     extensions({ tracking: { version: 1 } }),
@@ -45,8 +43,6 @@ test('sets given extensions on the response JSON body with data', async () => {
 })
 
 test('sets given extensions on the response JSON body in the presence with data and errors', async () => {
-  const data = createData()
-
   const result = await response(
     data({ hello: 'world' }),
     extensions({ tracking: { version: 1 } }),
